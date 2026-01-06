@@ -1,28 +1,45 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
-import pandas as pd
 import os
-from flask import Flask
 import threading
+import pandas as pd
+from flask import Flask
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    CallbackQueryHandler,
+    MessageHandler,
+    ContextTypes,
+    filters
+)
 
-# --- Servidor Web para o Render ---
+# ==========================================
+# 1. SERVIDOR WEB (Para o Render não dormir)
+# ==========================================
 web_app = Flask(__name__)
 
 @web_app.route('/')
 def health_check():
-    return "Bot is running!", 200
+    # O Render enviará requisições aqui para checar se o bot está vivo
+    return "Bot de Geolocalização: ON", 200
 
 def run_flask():
+    # O Render fornece a porta automaticamente na variável PORT
     port = int(os.environ.get("PORT", 10000))
     web_app.run(host='0.0.0.0', port=port)
 
-# --- Lógica do Bot ---
+# ==========================================
+# 2. LÓGICA DO BOT (Seu código original)
+# ==========================================
+# Buscando o Token das variáveis de ambiente do Render
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 user_state = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton("🪵 PG (Poste)", callback_data="poste")]]
-    await update.message.reply_text("👋 Olá!\n\nO que deseja localizar?", reply_markup=InlineKeyboardMarkup(keyboard))
+    keyboard = [[InlineKeyboardButton("⚡ PG (Poste)", callback_data="poste")]]
+    await update.message.reply_text(
+        "👋 Olá!\n\nO que você deseja localizar?",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 async def escolher_componente(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -38,7 +55,7 @@ async def buscar_poste(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     codigo = update.message.text.strip()
     try:
-        # Caminho corrigido para a pasta dados
+        # Tenta carregar o Excel da pasta 'dados'
         df = pd.read_excel("dados/postes.xlsx")
         resultado = df[df["ID_POSTE"].astype(str) == codigo]
 
@@ -56,21 +73,34 @@ async def buscar_poste(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🗺️ [Abrir no Google Maps]({row['GOOGLE_MAPS']})"
         )
         await update.message.reply_text(mensagem, parse_mode="Markdown")
-    except Exception as e:
-        await update.message.reply_text(f"Erro ao ler banco de dados: {e}")
 
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ Erro ao acessar a base de dados: {e}")
+
+# ==========================================
+# 3. EXECUÇÃO PRINCIPAL
+# ==========================================
 if __name__ == "__main__":
-    # Inicia o servidor web em uma thread separada
+    # Inicia o servidor Flask em uma thread separada
     threading.Thread(target=run_flask, daemon=True).start()
     
-    # Inicia o Bot
-    # No lugar de: app = ApplicationBuilder().token(TOKEN).build()
-# Tente isto:
-    app = ApplicationBuilder().token(TOKEN).read_timeout(30).connect_timeout(30).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(escolher_componente))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, buscar_poste))
+    print("🚀 Iniciando o bot...")
     
-    print("🤖 Bot rodando...")
+    try:
+        if not TOKEN:
+            print("❌ ERRO: A variável TELEGRAM_TOKEN não foi configurada no Render!")
+        else:
+            # Configuração do Application
+            app = ApplicationBuilder().token(TOKEN).build()
 
-    app.run_polling()
+            # Handlers
+            app.add_handler(CommandHandler("start", start))
+            app.add_handler(CallbackQueryHandler(escolher_componente))
+            app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, buscar_poste))
+
+            print("🤖 Bot rodando e aguardando mensagens...")
+            # drop_pending_updates limpa mensagens enviadas enquanto o bot estava desligado
+            app.run_polling(drop_pending_updates=True)
+
+    except Exception as e:
+        print(f"❌ Erro fatal: {e}")
