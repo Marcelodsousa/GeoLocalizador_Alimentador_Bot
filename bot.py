@@ -64,10 +64,13 @@ if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
     
     # Inicia o Bot
-    app = ApplicationBuilder().token(TOKEN).build()
+    # No lugar de: app = ApplicationBuilder().token(TOKEN).build()
+# Tente isto:
+    app = ApplicationBuilder().token(TOKEN).read_timeout(30).connect_timeout(30).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(escolher_componente))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, buscar_poste))
     
     print("🤖 Bot rodando...")
+
     app.run_polling()
