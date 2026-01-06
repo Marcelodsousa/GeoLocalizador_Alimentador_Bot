@@ -100,3 +100,4 @@ app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, buscar_poste))
 
 print("🤖 Bot rodando...")
 app.run_polling()
+
