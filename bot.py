@@ -1,5 +1,6 @@
 import os
 import threading
+import asyncio
 import pandas as pd
 from flask import Flask
 from pyproj import Transformer
@@ -70,7 +71,6 @@ async def buscar_poste(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     codigo = update.message.text.strip()
 
-    # Resposta imediata (UX)
     msg_status = await update.message.reply_text("🔍 Procurando o poste, aguarde...")
 
     try:
@@ -88,7 +88,7 @@ async def buscar_poste(update: Update, context: ContextTypes.DEFAULT_TYPE):
         municipio = row.get("INT_NOME_SE", "N/D")
 
         mensagem = (
-            f"🚩*Poste Localizado!*\n"
+            f"🚩 *Poste Localizado!*\n"
             f"───────────────────\n"
             f"🔢 *ID:* `{row['ID_POSTE']}`\n"
             f"🏙️ *Município:* {municipio}\n"
@@ -117,26 +117,32 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # ==========================================
-# 5. EXECUÇÃO (WEB SERVICE FREE)
+# 5. EXECUÇÃO CORRETA (EVENT LOOP + THREAD)
 # ==========================================
 def start_bot():
+    print(">>> START_BOT FOI EXECUTADO <<<")
+
     if not TOKEN:
         print("❌ TELEGRAM_TOKEN não definido")
         return
 
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("status", status))
-    app.add_handler(CallbackQueryHandler(escolher_componente))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, buscar_poste))
+    async def main():
+        app = ApplicationBuilder().token(TOKEN).build()
 
-    print("🤖 Bot Telegram iniciado")
-    app.run_polling(drop_pending_updates=True)
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(CommandHandler("status", status))
+        app.add_handler(CallbackQueryHandler(escolher_componente))
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, buscar_poste))
+
+        print("🤖 Bot Telegram iniciado e aguardando mensagens...")
+        await app.run_polling(drop_pending_updates=True)
+
+    asyncio.run(main())
 
 if __name__ == "__main__":
-    # Bot em thread secundária
+    # Bot Telegram em thread separada
     threading.Thread(target=start_bot, daemon=True).start()
 
-    # Flask como processo principal (Render)
+    # Flask como processo principal (Render Web Service)
     port = int(os.environ.get("PORT", 10000))
     web_app.run(host="0.0.0.0", port=port)
