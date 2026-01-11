@@ -30,9 +30,6 @@ transformer = Transformer.from_crs(PROJ_CEPI, "epsg:4326", always_xy=True)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CAMINHO_PLANILHA = os.path.join(BASE_DIR, "dados", "postes.xlsx")
 
-if not os.path.exists(CAMINHO_PLANILHA):
-    raise FileNotFoundError(f"❌ Planilha não encontrada: {CAMINHO_PLANILHA}")
-
 DF_POSTES = pd.read_excel(CAMINHO_PLANILHA)
 
 # ==========================================
@@ -41,10 +38,10 @@ DF_POSTES = pd.read_excel(CAMINHO_PLANILHA)
 web_app = Flask(__name__)
 
 @web_app.route("/")
-def health_check():
+def health():
     return "Bot ativo", 200
 
-def start_flask():
+def run_flask():
     port = int(os.environ.get("PORT", 10000))
     web_app.run(host="0.0.0.0", port=port)
 
@@ -61,13 +58,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-async def escolher_componente(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def escolher(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_state[query.from_user.id] = True
     await query.message.reply_text("Digite o ID do poste:")
 
-async def buscar_poste(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.from_user.id not in user_state:
         await update.message.reply_text("Use /start primeiro.")
         return
@@ -93,19 +90,23 @@ async def buscar_poste(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # ==========================================
-# 5. MAIN TELEGRAM (PROCESSO PRINCIPAL)
+# 5. LOOP PRINCIPAL (SEM run_polling)
 # ==========================================
-async def telegram_main():
-    if not TOKEN:
-        raise RuntimeError("TELEGRAM_TOKEN não definido")
-
+async def telegram_loop():
     app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(escolher_componente))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, buscar_poste))
 
-    print("🤖 Bot Telegram rodando...")
-    await app.run_polling(drop_pending_updates=True)
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(escolher))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, buscar))
+
+    print("🤖 Bot Telegram iniciado")
+
+    await app.initialize()
+    await app.start()
+    await app.bot.initialize()
+
+    # 🔴 mantém o processo vivo SEM fechar loop
+    await asyncio.Event().wait()
 
 # ==========================================
 # 6. BOOT
@@ -113,8 +114,5 @@ async def telegram_main():
 if __name__ == "__main__":
     print("🚀 Iniciando serviço")
 
-    # Flask em thread (keep alive)
-    threading.Thread(target=start_flask, daemon=True).start()
-
-    # Telegram polling no processo principal
-    asyncio.run(telegram_main())
+    threading.Thread(target=run_flask, daemon=True).start()
+    asyncio.run(telegram_loop())
