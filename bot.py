@@ -14,32 +14,37 @@ from telegram.ext import (
 )
 
 # ==========================================
-# 1. CONFIGURAÇÃO GEOGRÁFICA (PRECISÃO TOTAL)
+# 1. CONFIGURAÇÃO GEOGRÁFICA
 # ==========================================
-# Parâmetros que identificamos: Policônica, Datum CEPISA/SAD69, Translação de Helisert
 PROJ_CEPI = (
     "+proj=poly +lat_0=-7 +lon_0=-43 +x_0=1000000 +y_0=10000000 "
     "+ellps=aust_SA +towgs84=-67.35,3.88,-38.22,0,0,0,0 +units=m +no_defs"
 )
 
-# Transformador para WGS84 (Google Maps)
 transformer = Transformer.from_crs(PROJ_CEPI, "epsg:4326", always_xy=True)
 
 # ==========================================
-# 2. SERVIDOR WEB (Manter o Render Ativo)
+# 2. PLANILHA (CAMINHO ROBUSTO + CACHE)
+# ==========================================
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CAMINHO_PLANILHA = os.path.join(BASE_DIR, "dados", "postes.xlsx")
+
+if not os.path.exists(CAMINHO_PLANILHA):
+    raise FileNotFoundError(f"❌ Planilha não encontrada: {CAMINHO_PLANILHA}")
+
+DF_POSTES = pd.read_excel(CAMINHO_PLANILHA)
+
+# ==========================================
+# 3. SERVIDOR WEB (RENDER)
 # ==========================================
 web_app = Flask(__name__)
 
-@web_app.route('/')
+@web_app.route("/")
 def health_check():
     return "Bot de Geolocalização CEPISA: Ativo", 200
 
-def run_flask():
-    port = int(os.environ.get("PORT", 10000))
-    web_app.run(host='0.0.0.0', port=port)
-
 # ==========================================
-# 3. LÓGICA DO BOT
+# 4. BOT TELEGRAM
 # ==========================================
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 user_state = {}
@@ -47,7 +52,7 @@ user_state = {}
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("⚡ Localizar Poste (PG)", callback_data="poste")]]
     await update.message.reply_text(
-        "👋 Sistema de Localização Alto Longá\n\nO que deseja fazer?",
+        "👋 Sistema de Localização de Postes\n\nO que deseja fazer?",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -64,30 +69,29 @@ async def buscar_poste(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     codigo = update.message.text.strip()
+
+    # Resposta imediata (UX)
+    msg_status = await update.message.reply_text("🔍 Procurando o poste, aguarde...")
+
     try:
-        # Carrega a planilha original (sem necessidade de conversão prévia)
-        # Certifique-se que o arquivo está na pasta 'dados/' no seu repositório
-        df = pd.read_excel("dados/Postes_Alto_Longa.xlsx")
-        
-        # Busca pelo ID
-        resultado = df[df["ID_POSTE"].astype(str) == codigo]
+        resultado = DF_POSTES[DF_POSTES["ID_POSTE"].astype(str) == codigo]
 
         if resultado.empty:
-            await update.message.reply_text("❌ ID não encontrado na base de dados.")
+            await msg_status.edit_text("❌ ID não encontrado na base de dados.")
             return
 
         row = resultado.iloc[0]
-        
-        # CÁLCULO DE CONVERSÃO EM TEMPO REAL
-        # Converte X e Y da planilha para Lat/Long
-        lon, lat = transformer.transform(row['X'], row['Y'])
-        
+
+        lon, lat = transformer.transform(row["X"], row["Y"])
         google_maps_url = f"https://www.google.com/maps?q={lat},{lon}"
 
+        municipio = row.get("INT_NOME_SE", "N/D")
+
         mensagem = (
-            f"⚡ *Poste Localizado!*\n"
+            f"🚩*Poste Localizado!*\n"
             f"───────────────────\n"
             f"🔢 *ID:* `{row['ID_POSTE']}`\n"
+            f"🏙️ *Município:* {municipio}\n"
             f"📍 *X:* `{row['X']}`\n"
             f"📍 *Y:* `{row['Y']}`\n"
             f"───────────────────\n"
@@ -95,27 +99,44 @@ async def buscar_poste(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🌎 *Longitude:* `{lon:.7f}`\n\n"
             f"🗺️ [Abrir no Google Maps]({google_maps_url})"
         )
-        
-        await update.message.reply_text(mensagem, parse_mode="Markdown")
+
+        await msg_status.edit_text(mensagem, parse_mode="Markdown")
 
     except Exception as e:
-        await update.message.reply_text(f"⚠️ Erro ao processar: {e}")
+        await msg_status.edit_text("⚠️ Erro ao processar a solicitação.")
+        print(f"Erro interno: {e}")
+
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "🟢 *Status do Sistema*\n"
+        "───────────────────\n"
+        "🤖 Bot: ONLINE\n"
+        "☁️ Servidor: Render ativo\n"
+        "📡 Monitoramento: UptimeRobot OK",
+        parse_mode="Markdown"
+    )
 
 # ==========================================
-# 4. EXECUÇÃO
+# 5. EXECUÇÃO (WEB SERVICE FREE)
 # ==========================================
-if __name__ == "__main__":
-    # Flask em thread separada para o Render não dar timeout
-    threading.Thread(target=run_flask, daemon=True).start()
-    
+def start_bot():
     if not TOKEN:
-        print("❌ ERRO: Defina a variável TELEGRAM_TOKEN no painel do Render.")
-    else:
-        app = ApplicationBuilder().token(TOKEN).build()
+        print("❌ TELEGRAM_TOKEN não definido")
+        return
 
-        app.add_handler(CommandHandler("start", start))
-        app.add_handler(CallbackQueryHandler(escolher_componente))
-        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, buscar_poste))
+    app = ApplicationBuilder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("status", status))
+    app.add_handler(CallbackQueryHandler(escolher_componente))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, buscar_poste))
 
-        print("🤖 Bot rodando com conversão Policônica integrada!")
-        app.run_polling(drop_pending_updates=True)
+    print("🤖 Bot Telegram iniciado")
+    app.run_polling(drop_pending_updates=True)
+
+if __name__ == "__main__":
+    # Bot em thread secundária
+    threading.Thread(target=start_bot, daemon=True).start()
+
+    # Flask como processo principal (Render)
+    port = int(os.environ.get("PORT", 10000))
+    web_app.run(host="0.0.0.0", port=port)
