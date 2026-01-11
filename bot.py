@@ -21,7 +21,6 @@ PROJ_CEPI = (
     "+proj=poly +lat_0=-7 +lon_0=-43 +x_0=1000000 +y_0=10000000 "
     "+ellps=aust_SA +towgs84=-67.35,3.88,-38.22,0,0,0,0 +units=m +no_defs"
 )
-
 transformer = Transformer.from_crs(PROJ_CEPI, "epsg:4326", always_xy=True)
 
 # ==========================================
@@ -89,7 +88,7 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # ==========================================
-# LOOP TELEGRAM (SEM run_polling)
+# LOOP TELEGRAM (CORRETO)
 # ==========================================
 async def telegram_loop():
     if not TOKEN:
