@@ -15,7 +15,7 @@ from telegram.ext import (
 )
 
 # ==========================================
-# 1. CONFIGURAÇÃO GEOGRÁFICA
+# CONFIGURAÇÃO GEOGRÁFICA
 # ==========================================
 PROJ_CEPI = (
     "+proj=poly +lat_0=-7 +lon_0=-43 +x_0=1000000 +y_0=10000000 "
@@ -25,15 +25,14 @@ PROJ_CEPI = (
 transformer = Transformer.from_crs(PROJ_CEPI, "epsg:4326", always_xy=True)
 
 # ==========================================
-# 2. PLANILHA
+# PLANILHA
 # ==========================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CAMINHO_PLANILHA = os.path.join(BASE_DIR, "dados", "postes.xlsx")
-
 DF_POSTES = pd.read_excel(CAMINHO_PLANILHA)
 
 # ==========================================
-# 3. FLASK (KEEP ALIVE)
+# FLASK (KEEP ALIVE)
 # ==========================================
 web_app = Flask(__name__)
 
@@ -46,7 +45,7 @@ def run_flask():
     web_app.run(host="0.0.0.0", port=port)
 
 # ==========================================
-# 4. TELEGRAM BOT
+# TELEGRAM BOT
 # ==========================================
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 user_state = {}
@@ -90,9 +89,12 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # ==========================================
-# 5. LOOP PRINCIPAL (SEM run_polling)
+# LOOP TELEGRAM (SEM run_polling)
 # ==========================================
 async def telegram_loop():
+    if not TOKEN:
+        raise RuntimeError("TELEGRAM_TOKEN não definido")
+
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -103,13 +105,12 @@ async def telegram_loop():
 
     await app.initialize()
     await app.start()
-    await app.bot.initialize()
 
-    # 🔴 mantém o processo vivo SEM fechar loop
+    # mantém o processo vivo
     await asyncio.Event().wait()
 
 # ==========================================
-# 6. BOOT
+# BOOT
 # ==========================================
 if __name__ == "__main__":
     print("🚀 Iniciando serviço")
