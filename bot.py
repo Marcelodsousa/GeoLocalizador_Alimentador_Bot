@@ -1,5 +1,4 @@
 import os
-import threading
 import asyncio
 import pandas as pd
 from flask import Flask
@@ -36,7 +35,7 @@ if not os.path.exists(CAMINHO_PLANILHA):
 DF_POSTES = pd.read_excel(CAMINHO_PLANILHA)
 
 # ==========================================
-# 3. SERVIDOR WEB (RENDER)
+# 3. SERVIDOR WEB (MANTER RENDER ATIVO)
 # ==========================================
 web_app = Flask(__name__)
 
@@ -53,8 +52,9 @@ user_state = {}
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("⚡ Localizar Poste (PG)", callback_data="poste")]]
     await update.message.reply_text(
-        "👋 Sistema de Localização de Postes\n\nO que deseja fazer?",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        "👋 *Sistema de Localização de Postes*\n\nO que deseja fazer?",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="Markdown"
     )
 
 async def escolher_componente(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -70,7 +70,6 @@ async def buscar_poste(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     codigo = update.message.text.strip()
-
     msg_status = await update.message.reply_text("🔍 Procurando o poste, aguarde...")
 
     try:
@@ -81,10 +80,8 @@ async def buscar_poste(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         row = resultado.iloc[0]
-
         lon, lat = transformer.transform(row["X"], row["Y"])
         google_maps_url = f"https://www.google.com/maps?q={lat},{lon}"
-
         municipio = row.get("INT_NOME_SE", "N/D")
 
         mensagem = (
@@ -117,32 +114,28 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # ==========================================
-# 5. EXECUÇÃO CORRETA (EVENT LOOP + THREAD)
+# 5. EXECUÇÃO (POLLING CORRETO)
 # ==========================================
-def start_bot():
-    print(">>> START_BOT FOI EXECUTADO <<<")
-
+async def main():
     if not TOKEN:
-        print("❌ TELEGRAM_TOKEN não definido")
-        return
+        raise RuntimeError("❌ TELEGRAM_TOKEN não definido no Render")
 
-    async def main():
-        app = ApplicationBuilder().token(TOKEN).build()
+    app = ApplicationBuilder().token(TOKEN).build()
 
-        app.add_handler(CommandHandler("start", start))
-        app.add_handler(CommandHandler("status", status))
-        app.add_handler(CallbackQueryHandler(escolher_componente))
-        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, buscar_poste))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("status", status))
+    app.add_handler(CallbackQueryHandler(escolher_componente))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, buscar_poste))
 
-        print("🤖 Bot Telegram iniciado e aguardando mensagens...")
-        await app.run_polling(
-            drop_pending_updates=True,
-            stop_signals=None   # 🔴 LINHA CRÍTICA
-        )
+    print("🤖 Bot Telegram iniciado e aguardando mensagens...")
+    await app.run_polling(drop_pending_updates=True)
 
+if __name__ == "__main__":
+    print("🚀 Iniciando serviço no Render (Polling)")
+
+    # Inicia o bot Telegram (processo principal)
     asyncio.run(main())
 
-# ==========================================
-# 6. INICIALIZAÇÃO DO BOT (GUNICORN)
-# ==========================================
-threading.Thread(target=start_bot, daemon=True).start()
+    # Flask apenas para manter o serviço ativo
+    port = int(os.environ.get("PORT", 10000))
+    web_app.run(host="0.0.0.0", port=port)
