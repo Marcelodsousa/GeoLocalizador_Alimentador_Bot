@@ -139,10 +139,7 @@ def start_bot():
 
     asyncio.run(main())
 
-if __name__ == "__main__":
-    # Bot Telegram em thread separada
-    threading.Thread(target=start_bot, daemon=True).start()
-
-    # Flask como processo principal (Render Web Service)
-    port = int(os.environ.get("PORT", 10000))
-    web_app.run(host="0.0.0.0", port=port)
+# ==========================================
+# 6. INICIALIZAÇÃO DO BOT (GUNICORN)
+# ==========================================
+threading.Thread(target=start_bot, daemon=True).start()
