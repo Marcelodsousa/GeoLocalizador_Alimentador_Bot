@@ -135,7 +135,10 @@ def start_bot():
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, buscar_poste))
 
         print("🤖 Bot Telegram iniciado e aguardando mensagens...")
-        await app.run_polling(drop_pending_updates=True)
+        await app.run_polling(
+            drop_pending_updates=True,
+            stop_signals=None   # 🔴 LINHA CRÍTICA
+        )
 
     asyncio.run(main())
 
