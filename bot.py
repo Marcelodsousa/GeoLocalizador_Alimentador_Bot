@@ -73,7 +73,6 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     codigo = update.message.text.strip()
     msg = await update.message.reply_text("🔍 Procurando...")
 
-    # Busca na planilha
     resultado = DF_POSTES[DF_POSTES["ID_POSTE"].astype(str) == codigo]
     
     if resultado.empty:
@@ -81,10 +80,7 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     row = resultado.iloc[0]
-    # Conversão de coordenadas
     lon, lat = transformer.transform(row["X"], row["Y"])
-    
-    # Gerar link do Google Maps
     url = f"https://www.google.com/maps?q={lat},{lon}"
 
     await msg.edit_text(
@@ -93,40 +89,42 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Lat: `{lat:.7f}`\n"
         f"Lon: `{lon:.7f}`\n\n"
         f"🔗 [Abrir no Google Maps]({url})",
-        parse_mode="Markdown",
-        disable_web_page_preview=False
+        parse_mode="Markdown"
     )
 
 # ==========================================
-# EXECUÇÃO DO BOT
+# EXECUÇÃO DO BOT (CORREÇÃO DE THREAD/LOOP)
 # ==========================================
 def run_bot_thread():
-    """Função para rodar o bot dentro de uma thread"""
+    """Configura o loop de eventos e roda o bot na thread"""
     if not TOKEN:
-        print("❌ ERRO: Variável de ambiente TELEGRAM_TOKEN não encontrada.")
+        print("❌ ERRO: TELEGRAM_TOKEN não definido.")
         return
 
-    # Criar aplicação
-    application = ApplicationBuilder().token(TOKEN).build()
+    # CRIAR E DEFINIR UM NOVO LOOP PARA ESTA THREAD
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
-    # Handlers
+    # Configurar aplicação
+    application = ApplicationBuilder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(escolher))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, buscar))
 
-    print("🤖 Bot Telegram: Iniciando polling...")
-    # run_polling gerencia o asyncio internamente de forma segura
+    print("🤖 Bot Telegram iniciado na thread separada.")
+    
+    # Rodar o bot usando o loop criado
     application.run_polling(drop_pending_updates=True)
 
 # ==========================================
-# INICIALIZAÇÃO DO SERVIÇO
+# INICIALIZAÇÃO
 # ==========================================
 if __name__ == "__main__":
-    # 1. Inicia o Bot em segundo plano
+    # 1. Inicia o Bot na Thread (com seu próprio loop de eventos)
     bot_thread = threading.Thread(target=run_bot_thread, daemon=True)
     bot_thread.start()
 
-    # 2. Inicia o Flask no processo principal (Porta 10000 padrão do Render)
+    # 2. Inicia o Flask no processo principal
     port = int(os.environ.get("PORT", 10000))
-    print(f"🚀 Iniciando Servidor Web na porta {port}")
+    print(f"🚀 Iniciando Flask na porta {port}")
     web_app.run(host="0.0.0.0", port=port)
