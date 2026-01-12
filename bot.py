@@ -93,38 +93,41 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # ==========================================
-# EXECUÇÃO DO BOT (CORREÇÃO DE THREAD/LOOP)
+# EXECUÇÃO DO BOT (AJUSTE PARA THREAD)
 # ==========================================
 def run_bot_thread():
-    """Configura o loop de eventos e roda o bot na thread"""
     if not TOKEN:
         print("❌ ERRO: TELEGRAM_TOKEN não definido.")
         return
 
-    # CRIAR E DEFINIR UM NOVO LOOP PARA ESTA THREAD
+    # Criar novo loop para a thread secundária
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    # Configurar aplicação
     application = ApplicationBuilder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(escolher))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, buscar))
 
-    print("🤖 Bot Telegram iniciado na thread separada.")
+    print("🤖 Bot Telegram iniciado na thread secundária.")
     
-    # Rodar o bot usando o loop criado
-    application.run_polling(drop_pending_updates=True)
+    # IMPORTANTE: stop_signals=False evita o erro de "main thread"
+    # close_loop=False evita erro ao encerrar a thread
+    application.run_polling(
+        drop_pending_updates=True, 
+        stop_signals=False, 
+        close_loop=False
+    )
 
 # ==========================================
 # INICIALIZAÇÃO
 # ==========================================
 if __name__ == "__main__":
-    # 1. Inicia o Bot na Thread (com seu próprio loop de eventos)
+    # 1. Inicia o Bot na Thread
     bot_thread = threading.Thread(target=run_bot_thread, daemon=True)
     bot_thread.start()
 
-    # 2. Inicia o Flask no processo principal
+    # 2. Inicia o Flask (Processo Principal)
     port = int(os.environ.get("PORT", 10000))
-    print(f"🚀 Iniciando Flask na porta {port}")
+    print(f"🚀 Servidor Web rodando na porta {port}")
     web_app.run(host="0.0.0.0", port=port)
