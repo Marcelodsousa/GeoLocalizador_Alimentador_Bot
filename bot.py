@@ -24,27 +24,29 @@ PROJ_CEPI = (
 transformer = Transformer.from_crs(PROJ_CEPI, "epsg:4326", always_xy=True)
 
 # ==========================================
-# PLANILHA
+# CARREGAMENTO DA PLANILHA
 # ==========================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CAMINHO_PLANILHA = os.path.join(BASE_DIR, "dados", "postes.xlsx")
-DF_POSTES = pd.read_excel(CAMINHO_PLANILHA)
+
+try:
+    DF_POSTES = pd.read_excel(CAMINHO_PLANILHA)
+    print("✅ Planilha carregada com sucesso!")
+except Exception as e:
+    print(f"❌ Erro ao carregar planilha: {e}")
+    DF_POSTES = pd.DataFrame()
 
 # ==========================================
-# FLASK (KEEP ALIVE)
+# FLASK (KEEP ALIVE / HEALTH CHECK)
 # ==========================================
 web_app = Flask(__name__)
 
 @web_app.route("/")
 def health():
-    return "Bot ativo", 200
-
-def run_flask():
-    port = int(os.environ.get("PORT", 10000))
-    web_app.run(host="0.0.0.0", port=port)
+    return "Bot e Web App ativos", 200
 
 # ==========================================
-# TELEGRAM BOT
+# TELEGRAM BOT (LÓGICA)
 # ==========================================
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 user_state = {}
@@ -63,56 +65,68 @@ async def escolher(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.message.reply_text("Digite o ID do poste:")
 
 async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.from_user.id not in user_state:
+    user_id = update.message.from_user.id
+    if user_id not in user_state:
         await update.message.reply_text("Use /start primeiro.")
         return
 
     codigo = update.message.text.strip()
     msg = await update.message.reply_text("🔍 Procurando...")
 
+    # Busca na planilha
     resultado = DF_POSTES[DF_POSTES["ID_POSTE"].astype(str) == codigo]
+    
     if resultado.empty:
-        await msg.edit_text("❌ ID não encontrado.")
+        await msg.edit_text(f"❌ ID `{codigo}` não encontrado.")
         return
 
     row = resultado.iloc[0]
+    # Conversão de coordenadas
     lon, lat = transformer.transform(row["X"], row["Y"])
+    
+    # Gerar link do Google Maps
     url = f"https://www.google.com/maps?q={lat},{lon}"
 
     await msg.edit_text(
-        f"📍 Poste `{codigo}`\n"
+        f"📍 **Poste Encontrado**\n\n"
+        f"ID: `{codigo}`\n"
         f"Lat: `{lat:.7f}`\n"
         f"Lon: `{lon:.7f}`\n\n"
-        f"[Abrir no Google Maps]({url})",
-        parse_mode="Markdown"
+        f"🔗 [Abrir no Google Maps]({url})",
+        parse_mode="Markdown",
+        disable_web_page_preview=False
     )
 
 # ==========================================
-# LOOP TELEGRAM (CORRETO)
+# EXECUÇÃO DO BOT
 # ==========================================
-async def telegram_loop():
+def run_bot_thread():
+    """Função para rodar o bot dentro de uma thread"""
     if not TOKEN:
-        raise RuntimeError("TELEGRAM_TOKEN não definido")
+        print("❌ ERRO: Variável de ambiente TELEGRAM_TOKEN não encontrada.")
+        return
 
-    app = ApplicationBuilder().token(TOKEN).build()
+    # Criar aplicação
+    application = ApplicationBuilder().token(TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(escolher))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, buscar))
+    # Handlers
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CallbackQueryHandler(escolher))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, buscar))
 
-    print("🤖 Bot Telegram iniciado")
-
-    await app.initialize()
-    await app.start()
-
-    # mantém o processo vivo
-    await asyncio.Event().wait()
+    print("🤖 Bot Telegram: Iniciando polling...")
+    # run_polling gerencia o asyncio internamente de forma segura
+    application.run_polling(drop_pending_updates=True)
 
 # ==========================================
-# BOOT
+# INICIALIZAÇÃO DO SERVIÇO
 # ==========================================
 if __name__ == "__main__":
-    print("🚀 Iniciando serviço")
+    # 1. Inicia o Bot em segundo plano
+    bot_thread = threading.Thread(target=run_bot_thread, daemon=True)
+    bot_thread.start()
 
-    threading.Thread(target=run_flask, daemon=True).start()
-    asyncio.run(telegram_loop())
+    # 2. Inicia o Flask no processo principal (Porta 10000 padrão do Render)
+    port = int(os.environ.get("PORT", 10000))
+    print(f"🚀 Iniciando Servidor Web na porta {port}")
+    web_app.run(host="0.0.0.0", port=port)
